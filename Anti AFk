@@ -1,0 +1,343 @@
+@@ -154,3 +154,342 @@ UserInputService.InputChanged:Connect(function(input)
+        gui.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+
+
+
+-- Integrated Disconnect Watcher with Multi-Account Webhook Support (Krnl Optimized)
+-- CONFIG: Webhook URL for Spidey Bot (integrated from provided JSON)
+-- SECURITY: Keep this URL private; do not share publicly or in repositories
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1427389469215952897/jAUTmJLtPwDEYuZarNG_r6Tzeh5IUkVV1lVEvIypuzZlYFsh_nZmXwWLDDMztM_lMruv"
+
+-- Appearance (customized for multi-account clarity)
+local USERNAME = "Spidey Bot"  -- Matches webhook name
+local AVATAR_URL = ""  -- Optional: Add an avatar URL if desired
+local FOOTER_TEXT = "Disconnect Watcher"
+
+-- Embed Colors (configurable for visual distinction)
+local EMBED_COLOR_DISCONNECT = 15158332  -- Red
+local EMBED_COLOR_STARTUP = 3066993     -- Green
+local EMBED_COLOR_REJOIN = 3066993      -- Green for rejoin confirmation
+
+-- Internet Check Configuration (Krnl optimized)
+local INTERNET_CHECK_ENABLED = true  -- Enable periodic internet checks
+local INTERNET_CHECK_INTERVAL = 30  -- Seconds between internet checks
+local INTERNET_TIMEOUT = 10  -- Seconds for HTTP request timeout simulation
+
+-- Services
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+-- Runtime state (per account)
+local accounts = {}
+local rejoinTimes = {}  -- Track rejoin timestamps for confirmation
+
+-- Normalize and return a request function (Krnl optimized)
+local function getRequestFunction()
+	local function normalize(res, ok)
+		if not ok or not res then
+			return { ok = false, status = nil, body = tostring(res), headers = nil, raw = res }
+		end
+		local status = res.StatusCode or res.status or res.responseCode or res.Status or 0
+		local body = res.Body or res.body or (type(res) == "string" and res) or ""
+		local headers = res.Headers or res.headers or {}
+		return { ok = true, status = status, body = body, headers = headers, raw = res }
+	end
+
+	if http_request then
+		return function(req)
+			local ok, res = pcall(function() return http_request(req) end)
+			return normalize(res, ok)
+		end
+	end
+	if syn and syn.request then
+		return function(req)
+			local ok, res = pcall(function() return syn.request(req) end)
+			return normalize(res, ok)
+		end
+	end
+	if request then
+		return function(req)
+			local ok, res = pcall(function() return request(req) end)
+			return normalize(res, ok)
+		end
+	end
+	if http and http.request then
+		return function(req)
+			local ok, res = pcall(function() return http.request(req) end)
+			return normalize(res, ok)
+		end
+	end
+	return nil
+end
+
+local requestFunc = getRequestFunction()
+
+-- Validate webhook URL format
+local function validateWebhookUrl(url)
+	return typeof(url) == "string" and url:match("^https://discord%.com/api/webhooks/%d+/[%w-_]+$") ~= nil
+end
+
+-- Check internet connectivity (Krnl optimized with multiple endpoints)
+local function checkInternetConnection()
+	if not INTERNET_CHECK_ENABLED then return true end
+	local currentTime = os.clock()
+	if currentTime - (accounts[Players.LocalPlayer] and accounts[Players.LocalPlayer].lastInternetCheck or 0) < INTERNET_CHECK_INTERVAL then
+		return true
+	end
+	accounts[Players.LocalPlayer].lastInternetCheck = currentTime
+
+	local endpoints = {
+		"https://httpbin.org/ip",
+		"https://www.google.com/robots.txt",
+		"https://api.roblox.com"
+	}
+	for _, endpoint in pairs(endpoints) do
+		local success, err = pcall(function()
+			local req = {
+				Url = endpoint,
+				Method = "GET",
+				Headers = { ["Content-Type"] = "application/json" }
+			}
+			local res = requestFunc(req)
+			return res and res.ok and (res.status == 200 or res.status == 0)
+		end)
+		if success then return true end
+		warn("[Internet] Check failed for " .. endpoint .. ": " .. tostring(err))
+	end
+	return false
+end
+
+-- Sends payload with retries + exponential backoff
+local function sendWebhookWithRetries(payload, maxRetries)
+	maxRetries = maxRetries or 3
+	if not requestFunc then
+		warn("[Webhook] No request function available in this executor.")
+		return false, "no_request"
+	end
+	if not validateWebhookUrl(WEBHOOK_URL) then
+		warn("[Webhook] Invalid webhook URL format.")
+		return false, "invalid_url"
+	end
+
+	local body = HttpService:JSONEncode(payload)
+	local req = {
+		Url = WEBHOOK_URL,
+		Method = "POST",
+		Headers = { ["Content-Type"] = "application/json" },
+		Body = body
+	}
+
+	local backoff = 0.5
+	for attempt = 1, maxRetries do
+		local res = nil
+		local ok, err = pcall(function() res = requestFunc(req) end)
+		if not ok then
+			warn(("[Webhook] requestFunc error (attempt %d): %s"):format(attempt, tostring(err)))
+		else
+			if type(res) == "table" and res.ok then
+				local status = tonumber(res.status) or 0
+				if status >= 200 and status < 300 or status == 0 then
+					return true, res
+				end
+				if status == 429 or (res.body and tostring(res.body):find("rate limit")) then
+					local retryAfter = res.headers and (res.headers["Retry-After"] or res.headers["retry-after"] or res.headers["X-RateLimit-Reset"]) or backoff
+					retryAfter = tonumber(retryAfter) or backoff
+					warn(("[Webhook] rate limited, retrying after %s seconds (attempt %d)"):format(tostring(retryAfter), attempt))
+					task.wait(retryAfter)
+				else
+					warn(("[Webhook] non-2xx response (attempt %d): %s"):format(attempt, tostring(status)))
+				end
+			else
+				warn(("[Webhook] invalid response shape (attempt %d). raw: %s"):format(attempt, tostring(res and tostring(res.raw) or "nil")))
+			end
+		end
+		backoff = math.min(backoff * 2, 15)
+		task.wait(backoff)
+	end
+
+	local logMsg = "[Webhook] Failed after retries. Payload: " .. HttpService:JSONEncode(payload)
+	warn(logMsg)
+	return false, "failed_after_retries"
+end
+
+-- Helper to build a rich embed
+local function buildEmbed(title, color, fields, description, accountName, isRejoin)
+	local timestampUtc = os.date("!%Y-%m-%dT%H:%M:%SZ")
+	local embed = {
+		title = string.format("%s (%s)", title, accountName or "Unknown"),
+		description = description or nil,
+		color = color,
+		timestamp = timestampUtc,
+		footer = { text = string.format("%s | Account: %s", FOOTER_TEXT, accountName or "Unknown") },
+		fields = fields or {}
+	}
+	if isRejoin and rejoinTimes[accountName] then
+		embed.description = (embed.description or "") .. "\n**Rejoined at: **" .. os.date("%H:%M:%S", rejoinTimes[accountName])
+	end
+	return embed
+end
+
+-- Build disconnect embed with detailed reason and rejoin confirmation
+local function buildDisconnectEmbed(player, reason, isRejoin)
+	local account = accounts[player]
+	local username = player and player.Name or "Unknown"
+	local userId = player and tostring(player.UserId) or "Unknown"
+	local placeId = tostring(game.PlaceId or "Unknown")
+	local elapsed = account and math.max(0, math.floor(os.clock() - account.startTime)) or 0
+	local hours = math.floor(elapsed / 3600)
+	local mins = math.floor((elapsed % 3600) / 60)
+	local secs = elapsed % 60
+	local durationStr = elapsed == 0 and "0s" or string.format("%dm %ds", mins, secs)
+	if hours > 0 then
+		durationStr = string.format("%dh %s", hours, durationStr)
+	end
+
+	local fields = {
+		{ name = "Player", value = username, inline = true },
+		{ name = "UserId", value = userId, inline = true },
+		{ name = "PlaceId", value = placeId, inline = true },
+		{ name = "Duration", value = durationStr, inline = true },
+		{ name = "Reason", value = reason or "Unknown", inline = false },
+	}
+	return buildEmbed("Player disconnected", isRejoin and EMBED_COLOR_REJOIN or EMBED_COLOR_DISCONNECT, fields, nil, username, isRejoin)
+end
+
+-- Build startup embed
+local function buildStartupEmbed(player)
+	local username = player and player.Name or "Unknown"
+	local userId = player and tostring(player.UserId) or "Unknown"
+	local description = string.format("Watcher active for %s (UserId: %s)", username, userId)
+	local fields = {
+		{ name = "PlaceId", value = tostring(game.PlaceId or "Unknown"), inline = true },
+	}
+	return buildEmbed("Watcher started", EMBED_COLOR_STARTUP, fields, description, username, false)
+end
+
+-- High-level send function
+local function sendNotice(player, embed, fallbackContent, noticeType)
+	local username = player and player.Name or "Unknown"
+	if not embed then
+		warn("[Webhook] Failed to build embed for " .. noticeType .. " (Account: " .. username .. ")")
+		return false, "build_failed"
+	end
+
+	local payload = {
+		content = fallbackContent or "@everyone",
+		username = USERNAME ~= "" and USERNAME or nil,
+		avatar_url = AVATAR_URL ~= "" and AVATAR_URL or nil,
+		embeds = { embed }
+	}
+
+	local ok, res = sendWebhookWithRetries(payload, 3)
+	if ok then
+		warn("[Webhook] " .. noticeType .. " embed sent for " .. username)
+		return true, res
+	end
+
+	local fallbackPayload = {
+		content = string.format("@everyone [Account: %s] %s", username, fallbackContent or noticeType),
+		username = USERNAME ~= "" and USERNAME or nil
+	}
+	local ok2, res2 = sendWebhookWithRetries(fallbackPayload, 2)
+	if ok2 then
+		warn("[Webhook] " .. noticeType .. " fallback sent for " .. username)
+		return true, res2
+	end
+
+	warn("[Webhook] Failed to send " .. noticeType .. " notice for " .. username)
+	return false, res
+end
+
+-- Send disconnect notice with detailed reason
+local function sendDisconnectNotice(player, reason, isRejoin)
+	local embed = buildDisconnectEmbed(player, reason, isRejoin)
+	local fallback = "@everyone Player " .. (player and player.Name or "Unknown") .. " disconnected. Reason: " .. (reason or "Unknown")
+	return sendNotice(player, embed, fallback, isRejoin and "Rejoin" or "Disconnect")
+end
+
+-- Build disconnect reason with enhanced internet error support
+local function buildDisconnectReason(player, text)
+	local reason = text or "client shutdown"
+	if INTERNET_CHECK_ENABLED then
+		if not checkInternetConnection() then
+			reason = "Internet disconnection detected"
+		end
+	end
+	return reason
+end
+
+-- Initialize account when player joins
+local function initializeAccount(player)
+	if not accounts[player] then
+		accounts[player] = {
+			startTime = os.clock(),
+			sentDisconnect = false,
+			lastInternetCheck = 0,
+			lastSessionCheck = 0
+		}
+		-- Send startup notification
+		local embed = buildStartupEmbed(player)
+		local payload = {
+			username = USERNAME ~= "" and USERNAME or nil,
+			avatar_url = AVATAR_URL ~= "" and AVATAR_URL or nil,
+			embeds = { embed }
+		}
+		sendWebhookWithRetries(payload, 2)
+		warn("[Webhook] Watcher started for " .. player.Name)
+	end
+end
+
+-- Handle player disconnection
+local function handleDisconnect(player)
+	local account = accounts[player]
+	if account and not account.sentDisconnect then
+		account.sentDisconnect = true
+		local reason = buildDisconnectReason(player, "Player left the server")
+		sendDisconnectNotice(player, reason, false)
+		accounts[player] = nil
+	end
+end
+
+-- Handle player rejoin (detected by PlayerAdded after removal)
+local function handleRejoin(player)
+	if accounts[player] and accounts[player].sentDisconnect then
+		local account = accounts[player]
+		account.sentDisconnect = false
+		account.startTime = os.clock()
+		rejoinTimes[player.Name] = os.time()
+		local reason = "Player rejoined after disconnection"
+		sendDisconnectNotice(player, reason, true)
+		warn("[Webhook] Rejoin detected for " .. player.Name)
+	end
+end
+
+-- Connect events
+Players.PlayerAdded:Connect(function(player)
+	initializeAccount(player)
+	handleRejoin(player)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	handleDisconnect(player)
+end)
+
+-- Continuous monitoring loop
+RunService.Stepped:Connect(function()
+	for _, player in pairs(Players:GetPlayers()) do
+		if not accounts[player] then
+			initializeAccount(player)
+		end
+		local account = accounts[player]
+		if account and not account.sentDisconnect then
+			if not player.Parent then
+				handleDisconnect(player)
+			end
+		end
+	end
+end)
+
+print("[Webhook] Disconnect watcher started for all accounts.")
