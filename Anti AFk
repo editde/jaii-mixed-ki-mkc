@@ -9,7 +9,7 @@ end)
 -- Integrated Disconnect Watcher with Multi-Account Webhook Support (Krnl Optimized)
 -- CONFIG: Webhook URL for Spidey Bot (integrated from provided JSON)
 -- SECURITY: Keep this URL private; do not share publicly or in repositories
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1427389469215952897/jAUTmJLtPwDEYuZarNG_r6Tzeh5IUkVV1lVEvIypuzZlYFsh_nZmXwWLDDMztM_lMruv"
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1433472351776935947/S5y09j7ApN8MNOUfuVPbTO5PqoJnn-siTJsTmHWsEbfDm78MzZEWWnXZAhwGh5_IcZEH"
 
 -- Appearance (customized for multi-account clarity)
 local USERNAME = "Spidey Bot"  -- Matches webhook name
