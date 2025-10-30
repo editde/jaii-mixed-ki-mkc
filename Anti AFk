@@ -1,4 +1,156 @@
-@@ -154,3 +154,342 @@ UserInputService.InputChanged:Connect(function(input)
+wait(0.5)
+
+-- GUI elements
+local ba = Instance.new("ScreenGui")
+local ca = Instance.new("Frame") -- draggable frame
+local title = Instance.new("TextLabel")
+local da = Instance.new("Frame")
+local _b = Instance.new("TextLabel")
+local ab = Instance.new("TextLabel")
+local timerLabel = Instance.new("TextLabel")
+local fpsLabel = Instance.new("TextLabel")
+
+ba.Parent = game.CoreGui
+ba.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- Title bar
+ca.Parent = ba
+ca.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+ca.Position = UDim2.new(0.7, 0, 0.1, 0)
+ca.Size = UDim2.new(0, 370, 0, 52)
+
+-- Title text
+title.Parent = ca
+title.BackgroundTransparency = 1
+title.Size = UDim2.new(1, 0, 1, 0)
+title.Font = Enum.Font.SourceSansSemibold
+title.Text = "Anti AFK & FPS Monitor"
+title.TextColor3 = Color3.fromRGB(0, 255, 255)
+title.TextSize = 22
+
+-- Main frame
+da.Parent = ca
+da.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+da.Position = UDim2.new(0, 0, 1, 0)
+da.Size = UDim2.new(0, 370, 0, 180)
+
+-- Footer
+_b.Parent = da
+_b.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+_b.Position = UDim2.new(0, 0, 0.8, 0)
+_b.Size = UDim2.new(0, 370, 0, 21)
+_b.Font = Enum.Font.Arial
+_b.Text = "made by tradesland"
+_b.TextColor3 = Color3.fromRGB(0, 255, 255)
+_b.TextSize = 20
+
+-- Status label
+ab.Parent = da
+ab.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+ab.Position = UDim2.new(0, 0, 0.15, 0)
+ab.Size = UDim2.new(0, 370, 0, 44)
+ab.Font = Enum.Font.ArialBold
+ab.Text = "Status: Active"
+ab.TextColor3 = Color3.fromRGB(0, 255, 255)
+ab.TextSize = 20
+
+-- Timer label
+timerLabel.Parent = da
+timerLabel.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+timerLabel.Position = UDim2.new(0, 0, 0.4, 0)
+timerLabel.Size = UDim2.new(0, 370, 0, 30)
+timerLabel.Font = Enum.Font.Arial
+timerLabel.Text = "Time Elapsed: 00:00"
+timerLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+timerLabel.TextSize = 18
+
+-- FPS label
+fpsLabel.Parent = da
+fpsLabel.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+fpsLabel.Position = UDim2.new(0, 0, 0.6, 0)
+fpsLabel.Size = UDim2.new(0, 370, 0, 30)
+fpsLabel.Font = Enum.Font.Arial
+fpsLabel.Text = "FPS: 0"
+fpsLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+fpsLabel.TextSize = 18
+
+-- Anti-AFK
+local VirtualUser = game:GetService("VirtualUser")
+local Players = game:GetService("Players")
+
+Players.LocalPlayer.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+    ab.Text = "ghostyshadowAFK Start"
+    wait(2)
+    ab.Text = "Status: Active"
+end)
+
+-- Timer logic
+local startTime = tick()
+task.spawn(function()
+    while true do
+        local elapsed = math.floor(tick() - startTime)
+        local minutes = math.floor(elapsed / 60)
+        local seconds = elapsed % 60
+        timerLabel.Text = string.format("Time Elapsed: %02d:%02d", minutes, seconds)
+        wait(1)
+    end
+end)
+
+-- FPS calculation variables
+local fps = 0
+local frameCount = 0
+local lastTime = tick()
+
+-- Color coding for FPS
+local function getFPSColor(fpsValue)
+    if fpsValue >= 60 then
+        return Color3.fromRGB(85, 255, 85) -- Green for good FPS
+    elseif fpsValue >= 30 then
+        return Color3.fromRGB(255, 255, 85) -- Yellow for okay FPS
+    else
+        return Color3.fromRGB(255, 85, 85) -- Red for bad FPS
+    end
+end
+
+-- Update FPS counter
+game:GetService("RunService").Heartbeat:Connect(function()
+    frameCount = frameCount + 1
+    local currentTime = tick()
+    
+    if currentTime - lastTime >= 1 then
+        fps = frameCount
+        frameCount = 0
+        lastTime = currentTime
+        
+        -- Update the FPS display
+        fpsLabel.Text = "FPS: " .. fps
+        fpsLabel.TextColor3 = getFPSColor(fps)
+    end
+end)
+
+-- Dragging system
+local UserInputService = game:GetService("UserInputService")
+local gui = ca
+local dragging, dragStart, startPos
+
+gui.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = gui.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
         gui.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
