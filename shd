@@ -1,5 +1,5 @@
 
-local extraEggNames = {"Lantern", "Bat"}
+local extraEggNames = {"Lantern", "Bat", "Hell", "Cobweb"}
 
 local function getEggNames()
     local eggNamesSet = {}
@@ -114,7 +114,9 @@ end)
 local function GetCurrentZone()
     local player = game.Players.LocalPlayer
 
-    if player:GetAttribute("ZoneMansionBasement") then
+    if player:GetAttribute("ZoneMansionUnderworld") then
+        return "MansionUnderworld"
+    elseif player:GetAttribute("ZoneMansionBasement") then
         return "MansionBasement"
     elseif player:GetAttribute("ZoneHauntedMansion") then
         return "HauntedMansion"
@@ -465,6 +467,7 @@ local npcLocations = {
     SpookyNeighborhood = workspace.GameObjects.ArmWrestling.SpookyNeighborhood.NPC,
     HauntedMansion = workspace.GameObjects.ArmWrestling.HauntedMansion.NPC,
     MansionBasement = workspace.GameObjects.ArmWrestling.MansionBasement.NPC,
+    MansionUnderworld = workspace.GameObjects.ArmWrestling.MansionUnderworld.NPC,
 }
 
 local modelNames = {}
@@ -814,6 +817,7 @@ local EggDropdown = Tabs.Eggs:AddDropdown("EggSelect", {
     Title = "Select Egg",
     Values = eggNames,
     Multi = false,
+    Searchable = true,
     Default = eggNames[1] or "None"
 })
 
@@ -1607,6 +1611,38 @@ AutoGhostFortuneToggle:OnChanged(function()
     end
 end)
 
+local UnderworldFortuneSection = Tabs.Wheel:AddSection("Underworld Fortune Wheel")
+
+local GhostFortuneSpinDropdown1 = Tabs.Wheel:AddDropdown("UnderworldFortuneSpinAmount", {
+    Title = "Spin Amount",
+    Description = "Select Wheel Spin Amount",
+    Values = {"1x", "3x", "10x"},
+    Multi = false,
+    Default = "1x"
+})
+
+local AutoGhostFortuneToggle1 = Tabs.Wheel:AddToggle("AutoUnderworldFortuneSpin", {
+    Title = "Auto Underworld Fortune Wheel",
+    Default = false
+})
+
+AutoGhostFortuneToggle1:OnChanged(function()
+    if AutoGhostFortuneToggle1.Value then
+        spawn(function()
+            while true do
+                if not AutoGhostFortuneToggle1.Value then break end
+                
+                local args = {
+                    [1] = "Underworld Fortune",
+                    [2] = GhostFortuneSpinDropdown1.Value == "3x" and "x10" or GhostFortuneSpinDropdown1.Value == "10x" and "x25" or nil
+                }
+                game:GetService("ReplicatedStorage").Packages.Knit.Services.SpinnerService.RF.Spin:InvokeServer(unpack(args))
+                
+                wait(1)
+            end
+        end)
+    end
+end)
 
 local AutoClickSection = Tabs.Tower:AddSection("Auto Click")
 
@@ -1833,6 +1869,178 @@ AutoTowerToggle:OnChanged(function()
     end
 end)
 
+
+local TowerSection1 = Tabs.Tower:AddSection("Underworld Tower")
+
+-- Tower Status
+local TowerKeysStatus1 = TowerSection1:Paragraph("TowerKeysStatus1", {
+    Title = "Tower Status",
+    Content = "Loading..."
+})
+
+-- Function to parse tower key amount
+local function parseTowerKeyAmount(amtText)
+    local numStr = amtText:match("x(.+)")
+    if not numStr then return 0 end
+    if numStr:find("k") then
+        local baseNum = tonumber(numStr:match("(%d+%.?%d*)k"))
+        return baseNum and (baseNum * 1000) or 0
+    else
+        return tonumber(numStr) or 0
+    end
+end
+
+
+
+local TowerController = Knit.GetController("TowerController")
+local TowerService = Knit.GetService("TowerService")
+
+-- Function to check tower status
+local function CheckTowerStatus()
+    local inTower = false
+    local towerName = "None"
+    
+    pcall(function()
+        local playerData = Knit.GetController("CustomReplicaController"):GetReplica()
+        if playerData and playerData.Data and playerData.Data.OngoingTower then
+            inTower = true
+            towerName = playerData.Data.OngoingTower
+        end
+    end)
+    
+    if not inTower then
+        pcall(function()
+            local towerHud = game.Players.LocalPlayer.PlayerGui.GameUI.Hud.Tower
+            if towerHud and towerHud.Visible then
+                inTower = true
+                towerName = towerHud.TowerName.Text or "Unknown Tower"
+            end
+        end)
+    end
+    
+    return inTower, towerName
+end
+
+-- Passive Status Updater
+task.spawn(function()
+    while true do
+        local player = game.Players.LocalPlayer
+        local keyAmount = "No Underworld Keys"
+        pcall(function()
+            local keyObj = player.PlayerGui.GameUI.Menus.Inventory.Display.Items.MainFrame.ScrollingFrame.KeysStorage.Objects:FindFirstChild("Underworld Tower Key/1")
+            if keyObj and keyObj:FindFirstChild("ButtonDisplay") and keyObj.ButtonDisplay:FindFirstChild("Amt") then
+                keyAmount = keyObj.ButtonDisplay.Amt.Text
+            end
+        end)
+
+        local inTower, towerName = CheckTowerStatus()
+        local statusText = "Underworld Keys: " .. keyAmount .. "\nIn Tower: " .. (inTower and "Yes (" .. towerName .. ")" or "No")
+        TowerKeysStatus1:SetValue(statusText)
+
+        task.wait(1)
+    end
+end)
+
+-- Manual Tower Buttons
+TowerSection1:AddButton({
+    Title = "Use Underworld Keys (1x)",
+    Description = "Use the Underworld Key once.",
+    Callback = function()
+        pcall(function()
+            local ArmWrestleService = Knit.GetService("ArmWrestleService")
+            ArmWrestleService:RequestEndFight("SkipEnd")
+        end)
+        
+        wait(0.5)
+        local args = {"UnderworldTower", false}
+        game:GetService("ReplicatedStorage").Packages.Knit.Services.TowerService.RF.EnterTower:InvokeServer(unpack(args))
+    end
+})
+
+TowerSection1:AddButton({
+    Title = "Use All Underworld Keys (250x)",
+    Description = "Use All Underworld Keys (max 250 at a time).",
+    Callback = function()
+        pcall(function()
+            local ArmWrestleService = Knit.GetService("ArmWrestleService")
+            ArmWrestleService:RequestEndFight("SkipEnd")
+        end)
+        
+        wait(0.5)
+        local args = {"UnderworldTower", true}
+        game:GetService("ReplicatedStorage").Packages.Knit.Services.TowerService.RF.EnterTower:InvokeServer(unpack(args))
+    end
+})
+
+-- Auto Tower Toggle
+local AutoTowerToggle1 = TowerSection1:AddToggle("AutoTower", {
+    Title = "Auto Tower (250 keys)",
+    Description = "Will auto complete the tower doing 250 keys each time. Temporarily disables Auto Fight/Click.",
+    Default = false
+})
+
+AutoTowerToggle1:OnChanged(function()
+    if AutoTowerToggle1.Value then
+        spawn(function()
+            local player = game.Players.LocalPlayer
+            local togglesDisabled = false
+            local wasAutoFightOn = false
+            local wasAutoClickOn = false
+
+            while AutoTowerToggle1.Value do
+                local inTower, _ = CheckTowerStatus()
+
+                local keyObject = player.PlayerGui.GameUI.Menus.Inventory.Display.Items.MainFrame.ScrollingFrame.KeysStorage.Objects:FindFirstChild("Underworld Tower Key/1")
+                local currentKeyAmount = 0
+                if keyObject and keyObject:FindFirstChild("ButtonDisplay") and keyObject.ButtonDisplay:FindFirstChild("Amt") then
+                    currentKeyAmount = parseTowerKeyAmount(keyObject.ButtonDisplay.Amt.Text)
+                end
+
+                local hasKeys = currentKeyAmount > 0
+
+                -- Disable other toggles if keys present
+                if hasKeys and not togglesDisabled then
+                    wasAutoFightOn = AutoFightToggle and AutoFightToggle.Value or false
+                    wasAutoClickOn = AutoClickToggle and AutoClickToggle.Value or false
+                    if wasAutoFightOn then AutoFightToggle:SetValue(false) end
+                    if wasAutoClickOn then AutoClickToggle:SetValue(false) end
+                    togglesDisabled = true
+                    wait(1)
+                elseif not hasKeys and togglesDisabled and not inTower then
+                    if wasAutoFightOn and AutoFightToggle then AutoFightToggle:SetValue(true) end
+                    if wasAutoClickOn and AutoClickToggle then AutoClickToggle:SetValue(true) end
+                    togglesDisabled = false
+                end
+
+                if not inTower and hasKeys then
+                    pcall(function()
+                        local ArmWrestleService = Knit.GetService("ArmWrestleService")
+                        ArmWrestleService:RequestEndFight("SkipEnd")
+                    end)
+                    wait(0.5)
+                    pcall(function()
+                        game:GetService("ReplicatedStorage").Packages.Knit.Services.TowerService.RF.EnterTower:InvokeServer("UnderworldTower", true)
+                    end)
+                end
+
+                wait(hasKeys and 1 or 5)
+            end
+
+            -- Re-enable toggles when manually turned off
+            if togglesDisabled then
+                wait(1)
+                local inTower, _ = CheckTowerStatus()
+                if not inTower then
+                    if wasAutoFightOn and AutoFightToggle then AutoFightToggle:SetValue(true) end
+                    if wasAutoClickOn and AutoClickToggle then AutoClickToggle:SetValue(true) end
+                end
+            end
+        end)
+    end
+end)
+
+
+
 -- Hand the library over to our managers
 SaveManager:SetLibrary(Library)
 InterfaceManager:SetLibrary(Library)
@@ -1846,3 +2054,4 @@ InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 SaveManager:BuildConfigSection(Tabs.Settings)
 Window:SelectTab(1)
 SaveManager:LoadAutoloadConfig()
+
